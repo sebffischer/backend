@@ -1,3 +1,5 @@
+// mostly adapted from: https://github.com/gomlx/gopjrt/tree/main/dtypes
+
 package dtype
 
 import (
