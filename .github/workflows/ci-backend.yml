@@ -1,4 +1,4 @@
-name: ci-backend
+name: backend
 
 on:
   push:
@@ -17,8 +17,10 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache: true
-      - run: go test ./backend/...
-      - run: go vet ./backend/...
+      - run: go test ./...
+        working-directory: backend
+      - run: go vet ./...
+        working-directory: backend
 
   lint:
     runs-on: ubuntu-latest
