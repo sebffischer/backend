@@ -9,37 +9,37 @@ import (
 )
 
 func TestArrayType_Strides(t *testing.T) {
-	// Test case 1: shape with dimensions [2, 3, 4]
-	shape := Make(dtype.Float32, 2, 3, 4)
-	strides := shape.Strides()
+	// Test case 1: array type with axis lengths [2, 3, 4]
+	arrayType := Make(dtype.Float32, 2, 3, 4)
+	strides := arrayType.Strides()
 	require.Equal(t, []int{12, 4, 1}, strides)
 
-	// Test case 2: shape with single dimension
-	shape = Make(dtype.Float32, 5)
-	strides = shape.Strides()
+	// Test case 2: array type with single axis
+	arrayType = Make(dtype.Float32, 5)
+	strides = arrayType.Strides()
 	require.Equal(t, []int{1}, strides)
 
-	// Test case 3: shape with dimensions [3, 1, 2]
-	shape = Make(dtype.Float32, 3, 1, 2)
-	strides = shape.Strides()
+	// Test case 3: array type with axis lengths [3, 1, 2]
+	arrayType = Make(dtype.Float32, 3, 1, 2)
+	strides = arrayType.Strides()
 	require.Equal(t, []int{2, 2, 1}, strides)
 }
 
-func TestShape_Iter(t *testing.T) {
+func TestArrayType_Iter(t *testing.T) {
 	// Version 1: there is only one value to iterate:
-	shape := Make(dtype.Float32, 1, 1, 1, 1)
-	collect := make([][]int, 0, shape.Size())
-	for flatIdx, indices := range shape.Iter() {
+	arrayType := Make(dtype.Float32, 1, 1, 1, 1)
+	collect := make([][]int, 0, arrayType.Size())
+	for flatIdx, indices := range arrayType.Iter() {
 		collect = append(collect, slices.Clone(indices))
 		require.Equal(t, 0, flatIdx) // There should only be one flatIdx, equal to 0.
 	}
 	require.Equal(t, [][]int{{0, 0, 0, 0}}, collect)
 
-	// Version 2: all axes are "spatial" (dim > 1)
-	shape = Make(dtype.Float64, 3, 2)
-	collect = make([][]int, 0, shape.Size())
+	// Version 2: all axes are "spatial" (length > 1)
+	arrayType = Make(dtype.Float64, 3, 2)
+	collect = make([][]int, 0, arrayType.Size())
 	var counter int
-	for flatIdx, indices := range shape.Iter() {
+	for flatIdx, indices := range arrayType.Iter() {
 		collect = append(collect, slices.Clone(indices))
 		require.Equal(t, counter, flatIdx)
 		counter++
@@ -55,10 +55,10 @@ func TestShape_Iter(t *testing.T) {
 	require.Equal(t, want, collect)
 
 	// Version 3: with only 2 spatial axes.
-	shape = Make(dtype.BFloat16, 3, 1, 2, 1)
-	collect = make([][]int, 0, shape.Size())
+	arrayType = Make(dtype.BFloat16, 3, 1, 2, 1)
+	collect = make([][]int, 0, arrayType.Size())
 	counter = 0
-	for flatIdx, indices := range shape.Iter() {
+	for flatIdx, indices := range arrayType.Iter() {
 		collect = append(collect, slices.Clone(indices))
 		require.Equal(t, counter, flatIdx)
 		counter++
@@ -74,17 +74,17 @@ func TestShape_Iter(t *testing.T) {
 	require.Equal(t, want, collect)
 }
 
-func TestShape_IterOnAxes(t *testing.T) {
-	// Shape with dimensions [2, 3, 4]
-	shape := Make(dtype.Float32, 2, 3, 4)
+func TestArrayType_IterOnAxes(t *testing.T) {
+	// Array type with axis lengths [2, 3, 4]
+	arrayType := Make(dtype.Float32, 2, 3, 4)
 
 	// Test iteration on the first axis.
 	var collect [][]int
 	var flatIndices []int
 	indices := make([]int, 3)
 	indices[1] = 1               // Index 1 should be fixed to 1.
-	axesToIterate := []int{0, 2} // We are only iterating on the axis 0 an 2.
-	for flatIdx, indicesResult := range shape.IterOnAxes(axesToIterate, nil, indices) {
+	axesToIterate := []int{0, 2} // We are only iterating on the axes 0 and 2.
+	for flatIdx, indicesResult := range arrayType.IterOnAxes(axesToIterate, nil, indices) {
 		collect = append(collect, slices.Clone(indicesResult))
 		flatIndices = append(flatIndices, flatIdx)
 	}

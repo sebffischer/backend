@@ -1,25 +1,9 @@
-/*
- *	Copyright 2025 Jan Pfeifer
- *
- *	Licensed under the Apache License, Version 2.0 (the "License");
- *	you may not use this file except in compliance with the License.
- *	You may obtain a copy of the License at
- *
- *	http://www.apache.org/licenses/LICENSE-2.0
- *
- *	Unless required by applicable law or agreed to in writing, software
- *	distributed under the License is distributed on an "AS IS" BASIS,
- *	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *	See the License for the specific language governing permissions and
- *	limitations under the License.
- */
-
-// Package shapes define Shape and DType and associated tools.
+// Package atype defines ArrayType and associated tools.
 //
-// Shape represents the shape (rank, dimensions, and DType) of either a Tensor or the expected
-// shape of a node in a computation Graph. DType indicates the data type for a Tensor's unit element.
+// ArrayType represents the array type (dtype and axes) of either an Array or the expected
+// array type of a node in a computation Graph. DType indicates the data type for an Array's unit element.
 //
-// Shape and DType are used both by the concrete tensor values (see pkg/core/tensors package) and when
+// ArrayType and DType are used both by the concrete array values (see pkg/core/arrays package) and when
 // working on the symbolic computation graph (see pkg/core/graph package).
 //
 // Go float16 support (commonly used by Nvidia GPUs) uses github.com/x448/float16 implementation,
@@ -27,44 +11,42 @@
 //
 // ## Glossary
 //
-//   - Rank: number of axes (dimensions) of a Tensor.
-//   - Axis: is the index of a dimension on a multidimensional Tensor. Sometimes used
-//     interchangeably with Dimension, but here we try to refer to a dimension index as "axis"
-//     (plural axes), and its size as its dimension.
-//   - Dimension: the size of a multi-dimension Tensor in one of its axes. See the example below.
-//   - DType: the data type of the unit element in a tensor. Enumeration defined in github.com/gomlx/gopjrt/dtypes
-//   - Scalar: is a shape where there are no axes (or dimensions), only a single value
-//     of the associated DType.
+//   - NumAxes: number of axes of an Array.
+//   - Axis: is the axis of an Array (plural: axes).
+//   - AxisLength: the length of an axis in an Array. See the example below.
+//     The length of an axis can also be 0.
+//   - DType: the data type of the unit element in an array. See the dtype package for possible values.
+//   - Scalar: Refers to an Array with 0 axes.
 //
-// Example: The multi-dimensional array `[][]int32{{0, 1, 2}, {3, 4, 5}}` if converted to a Tensor
-// would have shape `(int32)[2 3]`. We say it has rank 2 (so 2 axes), axis 0 has
-// dimension 2, and axis 1 has dimension 3. This shape could be created with
-// `shapes.Make(int32, 2, 3)`.
+// Example: The multi-dimensional array `[][]int32{{0, 1, 2}, {3, 4, 5}}` if converted to an Array
+// would have array type `(int32)[2 3]`. We say it has 2 axes (num_axes=2), axis 0 has
+// length 2, and axis 1 has length 3. This array type could be created with
+// `atype.Make(int32, 2, 3)`.
 //
 // ## Asserts
 //
-// When coding ML models, one delicate part is keeping tabs on the shape of
+// When coding ML models, one delicate part is keeping tabs on the array type of
 // graph nodes -- unfortunately, there is no compile-time checking of values,
 // so validation only happens in runtime. To facilitate and also to serve as code documentation,
 // this package provides two variations of _assert_ functionality. Examples:
 //
-// AssertRank and AssertDims check that the rank and dimensions of the given
-// object (that has a `Shape` method) match, otherwise it panics. The `-1` means
-// the dimension is unchecked (it can be anything).
+// AssertNumAxes and AssertAxisLengths check that the number of axes and axis lengths of the given
+// object (that has an `ArrayType` method) match, otherwise it panics. The `-1` means
+// the axis length is unchecked (it can be anything).
 //
 //	func modelGraph(ctx *context.Context, spec any, inputs []*Node) ([]*Node) {
 //		_ = spec  // Not needed here, we know the dataset.
-//		shapes.AssertRank(inputs, 2)
-//		batchSize := inputs.Shape().Dimensions[0]
+//		atype.AssertNumAxes(inputs, 2)
+//		batchSize := inputs.ArrayType().AxisLengths[0]
 //		logits := layers.Dense(ctx, inputs[0], /* useBias= */ true, /* outputDim= */ 1)
-//		shapes.AssertDims(logits, batchSize, -1)
+//		atype.AssertAxisLengths(logits, batchSize, -1)
 //		return []*Node{logits}
 //	}
 //
 // ```
 //
 // If you don't want to panic, but instead return an error through the `graph.Graph`, you can
-// use the `Node.AssertDims()` method. So it would look like `logits.AssertDims(batchSize, -1)`.
+// use the `Node.AssertAxisLengths()` method. So it would look like `logits.AssertAxisLengths(batchSize, -1)`.
 package atype
 
 import (
@@ -72,110 +54,99 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/sebffischer/backend/backend/dtype"
 )
 
-// ArrayType represents the shape of either a Tensor or the expected shape
-// of the value from a computation node.
+// ArrayType represents the array type (dtype and axes) of either an Array or from some computation node
+// that wraps an Array (e.g., when building a Graph).
 //
-// Use Make to create a new shape. See examples in the package documentation.
+// Use Make to create a new array type. See examples in the package documentation.
 type ArrayType struct {
 	// DType is the data type of the unit element in a tensor.
 	DType dtype.DType
 
-	// Dimensions is the size of each axis. Its length determines the rank.
-	Dimensions []int
-	// TupleShapes is used if this Shape represents a tuple of elements.
-	// Internal use only.
-	TupleShapes []ArrayType `json:"tuple,omitempty"` // Shapes of the tuple, if this is a tuple.
+	// AxisLengths is the length of each axis. Its length determines the number of axes.
+	AxisLengths []int
 }
 
-// Make returns a Shape structure filled with the values given.
-// See MakeTuple for tuple shapes.
-func Make(dtype dtype.DType, dimensions ...int) ArrayType {
-	s := ArrayType{Dimensions: slices.Clone(dimensions), DType: dtype}
-	for _, dim := range dimensions {
-		if dim < 0 {
-			panic(errors.Errorf("atype.Make(%s): cannot create a shape with an axis with dimension < 0", s))
+// Make returns an ArrayType structure filled with the values given.
+func Make(dtype dtype.DType, axisLengths ...int) ArrayType {
+	at := ArrayType{AxisLengths: slices.Clone(axisLengths), DType: dtype}
+	for _, length := range axisLengths {
+		if length < 0 {
+			panic(errors.Errorf("atype.Make(%s): cannot create an array type with an axis with length < 0", at))
 		}
 	}
-	return s
+	return at
 }
 
-// Scalar returns a scalar Shape for the given type.
+// Scalar returns a scalar ArrayType for the given type.
 func Scalar[T dtype.Number]() ArrayType {
 	return ArrayType{DType: dtype.FromGenericsType[T]()}
 }
 
-// Invalid returns an invalid shape.
+// Invalid returns an invalid array type.
 //
-// Invalid().IsOk() == false.
+// Invalid().Ok() == false.
 func Invalid() ArrayType {
 	return ArrayType{DType: dtype.InvalidDType}
 }
 
-// Ok returns whether this is a valid Shape. A "zero" shape, that is just instantiating it with Shape{} will be invalid.
-func (s ArrayType) Ok() bool { return s.DType != dtype.InvalidDType || len(s.TupleShapes) > 0 }
+// Ok returns whether this is a valid ArrayType. A "zero" array type, that is just instantiating it with ArrayType{} will be invalid.
+func (at ArrayType) Ok() bool { return at.DType != dtype.InvalidDType }
 
-// Rank of the shape, that is, the number of dimensions.
-func (s ArrayType) Rank() int { return len(s.Dimensions) }
+// NumAxes returns the number of axes of the array.
+func (at ArrayType) NumAxes() int { return len(at.AxisLengths) }
 
-// IsScalar returns whether the shape represents a scalar, that is there are no dimensions (rank==0).
-func (s ArrayType) IsScalar() bool { return s.Ok() && s.Rank() == 0 }
+// IsScalar returns whether the array type represents a scalar, that is there are no axes.
+func (at ArrayType) IsScalar() bool { return at.Ok() && at.NumAxes() == 0 }
 
-// Dim returns the dimension of the given axis. axis can take negative numbers, in which
+// AxisLength returns the length of the given axis. axis can take negative numbers, in which
 // case it counts as starting from the end -- so axis=-1 refers to the last axis.
 // Like with a slice indexing, it panics for an out-of-bound axis.
-func (s ArrayType) Dim(axis int) int {
+func (at ArrayType) AxisLength(axis int) int {
 	adjustedAxis := axis
 	if adjustedAxis < 0 {
-		adjustedAxis += s.Rank()
+		adjustedAxis += at.NumAxes()
 	}
-	if adjustedAxis < 0 || adjustedAxis > s.Rank() {
-		panic(errors.Errorf("ArrayType.Dim(%d) out-of-bounds for rank %d (shape=%s)", axis, s.Rank(), s))
+	if adjustedAxis < 0 || adjustedAxis >= at.NumAxes() {
+		panic(errors.Errorf("ArrayType.AxisLength(%d) out-of-bounds for NumAxes %d (arrayType=%s)", axis, at.NumAxes(), at))
 	}
-	return s.Dimensions[adjustedAxis]
+	return at.AxisLengths[adjustedAxis]
 }
 
-// Shape returns a shallow copy of itself. It implements the HasShape interface.
-func (s ArrayType) Shape() ArrayType { return s }
+func (at ArrayType) ArrayType() ArrayType { return at }
 
-// String implements stringer, pretty-prints the shape.
-func (s ArrayType) String() string {
-	if s.TupleSize() > 0 {
-		parts := make([]string, 0, s.TupleSize())
-		for _, tuple := range s.TupleShapes {
-			parts = append(parts, tuple.String())
-		}
-		return fmt.Sprintf("Tuple<%s>", strings.Join(parts, ", "))
+// String implements stringer, pretty-prints the array type.
+func (at ArrayType) String() string {
+	if at.NumAxes() == 0 {
+		return fmt.Sprintf("(%s)", at.DType)
 	}
-	if s.Rank() == 0 {
-		return fmt.Sprintf("(%s)", s.DType)
-	}
-	return fmt.Sprintf("(%s)%v", s.DType, s.Dimensions)
+	return fmt.Sprintf("(%s)%v", at.DType, at.AxisLengths)
 }
 
-// Size returns the number of elements (not bytes) for this shape. It's the product of all dimensions.
+// Size returns the number of elements (not bytes) for this array type. It's the product of all axis lengths.
 //
-// For the number of bytes used to store this shape, see Shape.Memory.
-func (s ArrayType) Size() (size int) {
+// For the number of bytes used to store an array with this array type, see ArrayType.Memory.
+// TODO: Rename to numElemenets
+func (at ArrayType) Size() (size int) {
 	size = 1
-	for _, d := range s.Dimensions {
-		size *= d
+	for _, length := range at.AxisLengths {
+		size *= length
 	}
 	return
 }
 
-// IsZeroSize returns whether any of the dimensions is zero, in which case
-// it's an empty shape, with no data attached to it.
+// IsZeroSize returns whether any of the axis lengths is zero, in which case
+// it's an empty array type, with no data attached to it.
 //
-// Notice scalars are not zero in size -- they have size one, but rank zero.
-func (s ArrayType) IsZeroSize() bool {
-	for _, d := range s.Dimensions {
-		if d == 0 {
+// Notice scalars are not zero in size -- they have size one, but zero axes.
+// TODO: Rename to HasZeroElements()
+func (at ArrayType) IsZeroSize() bool {
+	for _, length := range at.AxisLengths {
+		if length == 0 {
 			return true
 		}
 	}
@@ -183,218 +154,148 @@ func (s ArrayType) IsZeroSize() bool {
 
 }
 
-// Memory returns the memory used to store an array of the given shape, the same as the size in bytes.
+// Memory returns the memory used to store an array of the given array type, the same as the size in bytes.
 // Careful, so far all types in Go and on device seem to use the same sizes, but future type this is not guaranteed.
-func (s ArrayType) Memory() uintptr {
-	return s.DType.Memory() * uintptr(s.Size())
+func (at ArrayType) Memory() uintptr {
+	// FIXME: How to handle sub-byte types (like S2 etc.)
+	return at.DType.Memory() * uintptr(at.Size())
 }
 
-// MakeTuple returns a shape representing a tuple of elements with the given shapes.
-func MakeTuple(elements []ArrayType) ArrayType {
-	return ArrayType{DType: dtype.InvalidDType, Dimensions: nil, TupleShapes: elements}
-}
-
-// IsTuple returns whether the shape represents a tuple.
-func (s ArrayType) IsTuple() bool {
-	return s.DType == dtype.InvalidDType
-}
-
-// TupleSize returns the number of elements in the tuple, if it is a tuple.
-func (s ArrayType) TupleSize() int {
-	return len(s.TupleShapes)
-}
-
-// Equal compares two shapes for equality: dtype and dimensions are compared.
-func (s ArrayType) Equal(s2 ArrayType) bool {
-	if s.DType != s2.DType {
+// Equal compares two array types for equality: dtype and axis lengths are compared.
+func (at ArrayType) Equal(other ArrayType) bool {
+	if at.DType != other.DType {
 		return false
 	}
-	if s.IsTuple() {
-		if s.TupleSize() != s2.TupleSize() {
-			return false
-		}
-		for ii, element := range s.TupleShapes {
-			if !element.Equal(s2.TupleShapes[ii]) {
-				return false
-			}
-		}
-		return true
-	}
-	if s.Rank() != s2.Rank() {
+	if at.NumAxes() != other.NumAxes() {
 		return false
 	}
-	if s.IsScalar() {
+	if at.IsScalar() {
 		return true
 	}
-	// For normal shapes just compare dimensions.
-	return slices.Equal(s.Dimensions, s2.Dimensions)
+	// For normal array types just compare axis lengths.
+	return slices.Equal(at.AxisLengths, other.AxisLengths)
 }
 
-// EqualDimensions compares two shapes for equality of dimensions. Dtypes can be different.
-func (s ArrayType) EqualDimensions(s2 ArrayType) bool {
-	if s.IsTuple() {
-		if !s2.IsTuple() {
-			return false
-		}
-		if s.TupleSize() != s2.TupleSize() {
-			return false
-		}
-		for ii, element := range s.TupleShapes {
-			if !element.EqualDimensions(s2.TupleShapes[ii]) {
-				return false
-			}
-		}
-		return true
-	}
-	if s.Rank() != s2.Rank() {
+// EqualAxes compares two array types for equality of axis lengths. Dtypes can be different.
+func (at ArrayType) EqualAxes(other ArrayType) bool {
+	if at.NumAxes() != other.NumAxes() {
 		return false
 	}
-	if s.IsScalar() {
+	if at.IsScalar() {
 		return true
 	}
-	// For normal shapes just compare dimensions.
-	return slices.Equal(s.Dimensions, s2.Dimensions)
+	// For normal array types just compare axis lengths.
+	return slices.Equal(at.AxisLengths, other.AxisLengths)
 }
 
-// Clone returns a new deep copy of the shape.
-func (s ArrayType) Clone() (s2 ArrayType) {
-	s2.DType = s.DType
-	s2.Dimensions = slices.Clone(s.Dimensions)
-	if s.TupleSize() > 0 {
-		s2.TupleShapes = make([]ArrayType, 0, len(s.TupleShapes))
-		for _, subShape := range s.TupleShapes {
-			s2.TupleShapes = append(s2.TupleShapes, subShape.Clone())
-		}
-	}
+// Clone returns a new deep copy of the array type.
+func (at ArrayType) Clone() (cloned ArrayType) {
+	cloned.DType = at.DType
+	cloned.AxisLengths = slices.Clone(at.AxisLengths)
 	return
 }
 
-// GobSerialize shape in binary format.
-func (s ArrayType) GobSerialize(encoder *gob.Encoder) (err error) {
+// GobSerialize serializes the array type in binary format.
+func (at ArrayType) GobSerialize(encoder *gob.Encoder) (err error) {
 	enc := func(e any) {
 		if err != nil {
 			return
 		}
 		err = encoder.Encode(e)
 		if err != nil {
-			err = errors.Wrapf(err, "failed to serialize Shape %s", s)
+			err = errors.Wrapf(err, "failed to serialize ArrayType %s", at)
 		}
 	}
-	enc(s.DType)
-	enc(s.Dimensions)
-	enc(len(s.TupleShapes))
-	if err != nil {
-		return
-	}
-	for _, subShape := range s.TupleShapes {
-		err = subShape.GobSerialize(encoder)
-		if err != nil {
-			return
-		}
-	}
+	enc(at.DType)
+	enc(at.AxisLengths)
 	return
 }
 
-// GobDeserialize a Shape. Returns new Shape or an error.
-func GobDeserialize(decoder *gob.Decoder) (s ArrayType, err error) {
+// GobDeserialize deserializes an ArrayType. Returns new ArrayType or an error.
+func GobDeserialize(decoder *gob.Decoder) (at ArrayType, err error) {
 	dec := func(data any) {
 		if err != nil {
 			return
 		}
 		err = decoder.Decode(data)
 		if err != nil {
-			err = errors.Wrapf(err, "failed to deserialize Shape")
+			err = errors.Wrapf(err, "failed to deserialize ArrayType")
 		}
 	}
-	dec(&s.DType)
-	dec(&s.Dimensions)
-	var numTuples int
-	dec(&numTuples)
-	if err != nil {
-		return
-	}
-	s.TupleShapes = make([]ArrayType, numTuples)
-	for ii := range s.TupleShapes {
-		s.TupleShapes[ii], err = GobDeserialize(decoder)
-		if err != nil {
-			return
-		}
-	}
+	dec(&at.DType)
+	dec(&at.AxisLengths)
 	return
 }
 
-// ConcatenateDimensions of two shapes. The resulting rank is the sum of both ranks. They must
-// have the same dtype. If any of them is a scalar, the resulting shape will be a copy of the other.
-// It doesn't work for Tuples.
-func ConcatenateDimensions(s1, s2 ArrayType) (shape ArrayType) {
-	if s1.IsTuple() || s2.IsTuple() {
+// ConcatenateAxes of two array types. The resulting number of axes is the sum of both numbers of axes. They must
+// have the same dtype. If any of them is a scalar, the resulting array type will be a copy of the other.
+// TODO: Not sure how much I like this name
+func ConcatenateAxes(at1, at2 ArrayType) (result ArrayType) {
+	if at1.DType == dtype.InvalidDType || at2.DType == dtype.InvalidDType {
 		return
 	}
-	if s1.DType == dtype.InvalidDType || s2.DType == dtype.InvalidDType {
+	if at1.DType != at2.DType {
 		return
 	}
-	if s1.DType != s2.DType {
-		return
+	if at1.IsScalar() {
+		return at2.Clone()
+	} else if at2.IsScalar() {
+		return at1.Clone()
 	}
-	if s1.IsScalar() {
-		return s2.Clone()
-	} else if s2.IsScalar() {
-		return s1.Clone()
-	}
-	shape.DType = s1.DType
-	shape.Dimensions = make([]int, s1.Rank()+s2.Rank())
-	copy(shape.Dimensions, s1.Dimensions)
-	copy(shape.Dimensions[s1.Rank():], s2.Dimensions)
+	result.DType = at1.DType
+	result.AxisLengths = make([]int, at1.NumAxes()+at2.NumAxes())
+	copy(result.AxisLengths, at1.AxisLengths)
+	copy(result.AxisLengths[at1.NumAxes():], at2.AxisLengths)
 	return
 }
 
-// FromAnyValue attempts to convert a Go "any" value to its expected shape.
+// FromAnyValue attempts to convert a Go "any" value to its expected array type.
 // Accepted values are plain-old-data (POD) types (ints, floats, complex), slices (or multiple level of slices) of POD.
 //
-// It returns the expected shape.
+// It returns the expected array type.
 //
 // Example:
 //
-//	shape := atype.FromAnyValue([][]float64{{0, 0}}) // Returns shape (Float64)[1 2]
-func FromAnyValue(v any) (shape ArrayType, err error) {
-	err = shapeForAnyValueRecursive(&shape, reflect.ValueOf(v), reflect.TypeOf(v))
+//	arrayType := atype.FromAnyValue([][]float64{{0, 0}}) // Returns array type (Float64)[1 2]
+func FromAnyValue(v any) (arrayType ArrayType, err error) {
+	err = arrayTypeForAnyValueRecursive(&arrayType, reflect.ValueOf(v), reflect.TypeOf(v))
 	return
 }
 
-func shapeForAnyValueRecursive(shape *ArrayType, v reflect.Value, t reflect.Type) error {
+func arrayTypeForAnyValueRecursive(arrayType *ArrayType, v reflect.Value, t reflect.Type) error {
 	if t.Kind() != reflect.Slice {
 		// If it's not a slice, it must be one of the supported scalar types.
-		shape.DType = dtype.FromGoType(t)
-		if shape.DType == dtype.InvalidDType {
-			return errors.Errorf("cannot convert type %q to a valid backend shape (maybe type not supported yet?)", t)
+		arrayType.DType = dtype.FromGoType(t)
+		if arrayType.DType == dtype.InvalidDType {
+			return errors.Errorf("cannot convert type %q to a valid backend array type (maybe type not supported yet?)", t)
 		}
 		return nil
 	}
 
 	// Slice: recurse into its element type (again slices or a supported POD).
 	t = t.Elem()
-	shape.Dimensions = append(shape.Dimensions, v.Len())
-	shapePrefix := shape.Clone()
+	arrayType.AxisLengths = append(arrayType.AxisLengths, v.Len())
+	arrayTypePrefix := arrayType.Clone()
 
 	// The first element is the reference
 	if v.Len() == 0 {
-		return errors.Errorf("value with empty slice not valid for shape conversion: %T: %v -- it wouldn't be possible to figure out the inner dimensions", v.Interface(), v)
+		return errors.Errorf("value with empty slice not valid for array type conversion: %T: %v -- it wouldn't be possible to figure out the inner axis lengths", v.Interface(), v)
 	}
 	v0 := v.Index(0)
-	err := shapeForAnyValueRecursive(shape, v0, t)
+	err := arrayTypeForAnyValueRecursive(arrayType, v0, t)
 	if err != nil {
 		return err
 	}
 
-	// Test that other elements have the same shape as the first one.
+	// Test that other elements have the same array type as the first one.
 	for ii := 1; ii < v.Len(); ii++ {
-		shapeTest := shapePrefix.Clone()
-		err = shapeForAnyValueRecursive(&shapeTest, v.Index(ii), t)
+		arrayTypeTest := arrayTypePrefix.Clone()
+		err = arrayTypeForAnyValueRecursive(&arrayTypeTest, v.Index(ii), t)
 		if err != nil {
 			return err
 		}
-		if !shape.Equal(shapeTest) {
-			return fmt.Errorf("sub-slices have irregular shapes, found shapes %q, and %q", shape, shapeTest)
+		if !arrayType.Equal(arrayTypeTest) {
+			return fmt.Errorf("sub-slices have irregular array types, found array types %q, and %q", arrayType, arrayTypeTest)
 		}
 	}
 	return nil

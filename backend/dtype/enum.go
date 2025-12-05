@@ -2,6 +2,7 @@ package dtype
 
 // DType
 // The data type of values in an `Array`.
+// TODO: Rename to DatType (but used in too many places, so wait until everything is ported)
 type DType int32
 
 // The types are those listed in: https://openxla.org/stablehlo/spec#types (excluding a few like tf32)

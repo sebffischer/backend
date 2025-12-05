@@ -7,179 +7,166 @@ import (
 	"github.com/sebffischer/backend/backend/dtype"
 )
 
-// UncheckedAxis can be used in CheckDims or AssertDims functions for an axis
-// whose dimension doesn't matter.
+// UncheckedAxis can be used in CheckAxisLengths or AssertAxisLengths functions for an axis
+// whose length doesn't matter.
 // TODO: Probably remove this once we have proper mechanism for dynamic axes.
 const UncheckedAxis = int(-1)
 
-// HasShape is an interface for objects that have an associated ArrayType.
-// `tensor.Tensor` (concrete tensor) and `graph.Node` (tensor representations in a
-// computation graph), `context.Variable` and Shape itself implement the interface.
+// HasArrayType is an interface for objects that have an associated ArrayType.
 // TODO(rename): Rename to HasArrayType / ArrayLike
-type HasShape interface {
+type HasArrayType interface {
 	ArrayType() ArrayType
 }
 
-// CheckDims checks that the shape has the given dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// CheckAxisLengths checks that the array type has the given axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
-// It returns an error if the rank is different or if any of the dimensions don't match.
-// TODO(rename):  CheckDims -> CheckAxesSizes, dimensions -> axes_sizes
-func (s ArrayType) CheckDims(dimensions ...int) error {
-	if s.Rank() != len(dimensions) {
-		return errors.Errorf("shape (%s) has incompatible rank %d (wanted %d)", s, s.Rank(), len(dimensions))
+// It returns an error if the number of axes is different or if any of the axis lengths don't match.
+func (at ArrayType) CheckAxisLengths(axisLengths ...int) error {
+	if at.NumAxes() != len(axisLengths) {
+		return errors.Errorf("array type (%s) has incompatible number of axes %d (wanted %d)", at, at.NumAxes(), len(axisLengths))
 	}
-	for ii, wantDim := range dimensions {
-		if wantDim != -1 && s.Dimensions[ii] != wantDim {
-			return errors.Errorf("shape (%s) axis %d has dimension %d, wanted %d (shape wanted=%v)", s, ii, s.Dimensions[ii], wantDim, dimensions)
+	for ii, wantLength := range axisLengths {
+		if wantLength != -1 && at.AxisLengths[ii] != wantLength {
+			return errors.Errorf("array type (%s) axis %d has length %d, wanted %d (wanted=%v)", at, ii, at.AxisLengths[ii], wantLength, axisLengths)
 		}
 	}
 	return nil
 }
 
-// Check that the shape has the given dtype, dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// Check that the array type has the given dtype, axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
-// It returns an error if the dtype or rank is different or if any of the dimensions don't match.
-// TODO(rename):  dimensions -> axes_sizes
-func (s ArrayType) Check(dtype dtype.DType, dimensions ...int) error {
-	if dtype != s.DType {
-		return errors.Errorf("shape (%s) has incompatible dtype %s (wanted %s)", s, s.DType, dtype)
+// It returns an error if the dtype or number of axes is different or if any of the axis lengths don't match.
+func (at ArrayType) Check(dtype dtype.DType, axisLengths ...int) error {
+	if dtype != at.DType {
+		return errors.Errorf("array type (%s) has incompatible dtype %s (wanted %s)", at, at.DType, dtype)
 	}
-	return s.CheckDims(dimensions...)
+	return at.CheckAxisLengths(axisLengths...)
 }
 
-// AssertDims checks that the shape has the given dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// AssertAxisLengths checks that the array type has the given axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
 // It panics if it doesn't match.
 //
-// See usage example in package shapes documentation.
-// TODO(rename):  AssertDims -> AssertAxesSizes, dimensions -> axes_sizes
-func (s ArrayType) AssertDims(dimensions ...int) {
-	err := s.CheckDims(dimensions...)
+// See usage example in package atype documentation.
+func (at ArrayType) AssertAxisLengths(axisLengths ...int) {
+	err := at.CheckAxisLengths(axisLengths...)
 	if err != nil {
-		panic(fmt.Sprintf("atype.AssertDims(%v): %+v", dimensions, err))
+		panic(fmt.Sprintf("atype.AssertAxisLengths(%v): %+v", axisLengths, err))
 	}
 }
 
-// Assert checks that the shape has the given dtype, dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// Assert checks that the array type has the given dtype, axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
 // It panics if it doesn't match.
-// TODO(rename):  Assert -> AssertAxesSizes, dimensions -> axes_sizes
-func (s ArrayType) Assert(dtype dtype.DType, dimensions ...int) {
-	err := s.Check(dtype, dimensions...)
+func (at ArrayType) Assert(dtype dtype.DType, axisLengths ...int) {
+	err := at.Check(dtype, axisLengths...)
 	if err != nil {
-		panic(fmt.Sprintf("atype.Assert(%s, %v): %+v", dtype, dimensions, err))
+		panic(fmt.Sprintf("atype.Assert(%s, %v): %+v", dtype, axisLengths, err))
 	}
 }
 
-// CheckDims checks that the shape has the given dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// CheckAxisLengths checks that the array type has the given axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
-// It returns an error if the rank is different or any of the dimensions.
-// TODO(rename):  CheckDims -> CheckAxesSizes, dimensions -> axes_sizes
-func CheckDims(shaped HasShape, dimensions ...int) error {
-	return shaped.ArrayType().CheckDims(dimensions...)
+// It returns an error if the number of axes is different or any of the axis lengths don't match.
+func CheckAxisLengths(hat HasArrayType, axisLengths ...int) error {
+	return hat.ArrayType().CheckAxisLengths(axisLengths...)
 }
 
-// AssertDims checks that the shape has the given dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// AssertAxisLengths checks that the array type has the given axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
 // It panics if it doesn't match.
 //
-// See usage example in package shapes documentation.
-// TODO(rename):  AssertDims -> AssertAxesSizes, dimensions -> axes_sizes
-func AssertDims(shaped HasShape, dimensions ...int) {
-	shaped.ArrayType().AssertDims(dimensions...)
+// See usage example in package atype documentation.
+func AssertAxisLengths(hat HasArrayType, axisLengths ...int) {
+	hat.ArrayType().AssertAxisLengths(axisLengths...)
 }
 
-// Assert checks that the shape has the given dtype, dimensions and rank. A value of -1 in
-// dimensions means it can take any value and is not checked.
+// Assert checks that the array type has the given dtype, axis lengths and number of axes. A value of -1 in
+// axisLengths means it can take any value and is not checked.
 //
 // It panics if it doesn't match.
-// TODO(rename):  dimensions -> axes_sizes
-func Assert(shaped HasShape, dtype dtype.DType, dimensions ...int) {
-	shaped.ArrayType().Assert(dtype, dimensions...)
+func Assert(hat HasArrayType, dtype dtype.DType, axisLengths ...int) {
+	hat.ArrayType().Assert(dtype, axisLengths...)
 }
 
-// CheckRank checks that the shape has the given rank.
+// CheckNumAxes checks that the array type has the given number of axes.
 //
-// It returns an error if the rank is different.
-// TODO(rename):  CheckRank -> CheckNumAxes, rank -> num_axes
-func (s ArrayType) CheckRank(rank int) error {
-	if s.Rank() != rank {
-		return errors.Errorf("shape (%s) has incompatible rank %d -- wanted %d", s, s.Rank(), rank)
+// It returns an error if the number of axes is different.
+func (at ArrayType) CheckNumAxes(numAxes int) error {
+	if at.NumAxes() != numAxes {
+		return errors.Errorf("array type (%s) has incompatible number of axes %d -- wanted %d", at, at.NumAxes(), numAxes)
 	}
 	return nil
 }
 
-// AssertRank checks that the shape has the given rank.
+// AssertNumAxes checks that the array type has the given number of axes.
 //
 // It panics if it doesn't match.
 //
-// See usage example in package shapes documentation.
-// TODO(rename):  AssertRank -> AssertNumAxes, rank -> num_axes
-func (s ArrayType) AssertRank(rank int) {
-	err := s.CheckRank(rank)
+// See usage example in package atype documentation.
+func (at ArrayType) AssertNumAxes(numAxes int) {
+	err := at.CheckNumAxes(numAxes)
 	if err != nil {
-		panic(fmt.Sprintf("assertRank(%d): %+v", rank, err))
+		panic(fmt.Sprintf("assertNumAxes(%d): %+v", numAxes, err))
 	}
 }
 
-// CheckRank checks that the shape has the given rank.
+// CheckNumAxes checks that the array type has the given number of axes.
 //
-// It returns an error if the rank is different.
-// TODO(rename):  CheckRank -> CheckNumAxes, rank -> num_axes
-func CheckRank(shaped HasShape, rank int) error {
-	return shaped.ArrayType().CheckRank(rank)
+// It returns an error if the number of axes is different.
+func CheckNumAxes(hat HasArrayType, numAxes int) error {
+	return hat.ArrayType().CheckNumAxes(numAxes)
 }
 
-// AssertRank checks that the shape has the given rank.
+// AssertNumAxes checks that the array type has the given number of axes.
 //
 // It panics if it doesn't match.
 //
-// See usage example in package shapes documentation.
-// TODO(rename):  AssertRank -> AsserNumAxes
-func AssertRank(shaped HasShape, rank int) {
-	shaped.ArrayType().AssertRank(rank)
+// See usage example in package atype documentation.
+func AssertNumAxes(hat HasArrayType, numAxes int) {
+	hat.ArrayType().AssertNumAxes(numAxes)
 }
 
-// CheckScalar checks that the shape is a scalar.
+// CheckScalar checks that the array type is a scalar.
 //
-// It returns an error if shape is not a scalar.
-func (s ArrayType) CheckScalar() error {
-	if !s.IsScalar() {
-		return errors.Errorf("shape (%s) is not a scalar", s)
+// It returns an error if the array type is not a scalar.
+func (at ArrayType) CheckScalar() error {
+	if !at.IsScalar() {
+		return errors.Errorf("array type (%s) is not a scalar", at)
 	}
 	return nil
 }
 
-// AssertScalar checks that the shape is a scalar.
+// AssertScalar checks that the array type is a scalar.
 //
 // It panics if it doesn't match.
 //
-// See usage example in package shapes documentation.
-func (s ArrayType) AssertScalar() {
-	err := s.CheckScalar()
+// See usage example in package atype documentation.
+func (at ArrayType) AssertScalar() {
+	err := at.CheckScalar()
 	if err != nil {
 		panic(fmt.Sprintf("AssertScalar(): %+v", err))
 	}
 }
 
-// CheckScalar checks that the shape is a scalar.
+// CheckScalar checks that the array type is a scalar.
 //
-// It returns an error if shape is not a scalar.
-func CheckScalar(shaped HasShape) error {
-	return shaped.ArrayType().CheckScalar()
+// It returns an error if the array type is not a scalar.
+func CheckScalar(hat HasArrayType) error {
+	return hat.ArrayType().CheckScalar()
 }
 
-// AssertScalar checks that the shape is a scalar.
+// AssertScalar checks that the array type is a scalar.
 //
 // It panics if it doesn't match.
 //
-// See usage example in package shapes documentation.
-func AssertScalar(shaped HasShape) {
-	shaped.ArrayType().AssertScalar()
+// See usage example in package atype documentation.
+func AssertScalar(hat HasArrayType) {
+	hat.ArrayType().AssertScalar()
 }
