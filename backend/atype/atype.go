@@ -72,7 +72,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/sebffischer/backend/backend/dtype"
@@ -88,9 +87,6 @@ type ArrayType struct {
 
 	// Dimensions is the size of each axis. Its length determines the rank.
 	Dimensions []int
-	// TupleShapes is used if this Shape represents a tuple of elements.
-	// Internal use only.
-	TupleShapes []ArrayType `json:"tuple,omitempty"` // Shapes of the tuple, if this is a tuple.
 }
 
 // Make returns a Shape structure filled with the values given.
@@ -118,7 +114,7 @@ func Invalid() ArrayType {
 }
 
 // Ok returns whether this is a valid Shape. A "zero" shape, that is just instantiating it with Shape{} will be invalid.
-func (s ArrayType) Ok() bool { return s.DType != dtype.InvalidDType || len(s.TupleShapes) > 0 }
+func (s ArrayType) Ok() bool { return s.DType != dtype.InvalidDType }
 
 // Rank of the shape, that is, the number of dimensions.
 func (s ArrayType) Rank() int { return len(s.Dimensions) }
@@ -145,13 +141,6 @@ func (s ArrayType) Shape() ArrayType { return s }
 
 // String implements stringer, pretty-prints the shape.
 func (s ArrayType) String() string {
-	if s.TupleSize() > 0 {
-		parts := make([]string, 0, s.TupleSize())
-		for _, tuple := range s.TupleShapes {
-			parts = append(parts, tuple.String())
-		}
-		return fmt.Sprintf("Tuple<%s>", strings.Join(parts, ", "))
-	}
 	if s.Rank() == 0 {
 		return fmt.Sprintf("(%s)", s.DType)
 	}
@@ -189,36 +178,10 @@ func (s ArrayType) Memory() uintptr {
 	return s.DType.Memory() * uintptr(s.Size())
 }
 
-// MakeTuple returns a shape representing a tuple of elements with the given shapes.
-func MakeTuple(elements []ArrayType) ArrayType {
-	return ArrayType{DType: dtype.InvalidDType, Dimensions: nil, TupleShapes: elements}
-}
-
-// IsTuple returns whether the shape represents a tuple.
-func (s ArrayType) IsTuple() bool {
-	return s.DType == dtype.InvalidDType
-}
-
-// TupleSize returns the number of elements in the tuple, if it is a tuple.
-func (s ArrayType) TupleSize() int {
-	return len(s.TupleShapes)
-}
-
 // Equal compares two shapes for equality: dtype and dimensions are compared.
 func (s ArrayType) Equal(s2 ArrayType) bool {
 	if s.DType != s2.DType {
 		return false
-	}
-	if s.IsTuple() {
-		if s.TupleSize() != s2.TupleSize() {
-			return false
-		}
-		for ii, element := range s.TupleShapes {
-			if !element.Equal(s2.TupleShapes[ii]) {
-				return false
-			}
-		}
-		return true
 	}
 	if s.Rank() != s2.Rank() {
 		return false
@@ -232,20 +195,6 @@ func (s ArrayType) Equal(s2 ArrayType) bool {
 
 // EqualDimensions compares two shapes for equality of dimensions. Dtypes can be different.
 func (s ArrayType) EqualDimensions(s2 ArrayType) bool {
-	if s.IsTuple() {
-		if !s2.IsTuple() {
-			return false
-		}
-		if s.TupleSize() != s2.TupleSize() {
-			return false
-		}
-		for ii, element := range s.TupleShapes {
-			if !element.EqualDimensions(s2.TupleShapes[ii]) {
-				return false
-			}
-		}
-		return true
-	}
 	if s.Rank() != s2.Rank() {
 		return false
 	}
@@ -260,12 +209,6 @@ func (s ArrayType) EqualDimensions(s2 ArrayType) bool {
 func (s ArrayType) Clone() (s2 ArrayType) {
 	s2.DType = s.DType
 	s2.Dimensions = slices.Clone(s.Dimensions)
-	if s.TupleSize() > 0 {
-		s2.TupleShapes = make([]ArrayType, 0, len(s.TupleShapes))
-		for _, subShape := range s.TupleShapes {
-			s2.TupleShapes = append(s2.TupleShapes, subShape.Clone())
-		}
-	}
 	return
 }
 
@@ -282,16 +225,6 @@ func (s ArrayType) GobSerialize(encoder *gob.Encoder) (err error) {
 	}
 	enc(s.DType)
 	enc(s.Dimensions)
-	enc(len(s.TupleShapes))
-	if err != nil {
-		return
-	}
-	for _, subShape := range s.TupleShapes {
-		err = subShape.GobSerialize(encoder)
-		if err != nil {
-			return
-		}
-	}
 	return
 }
 
@@ -308,28 +241,12 @@ func GobDeserialize(decoder *gob.Decoder) (s ArrayType, err error) {
 	}
 	dec(&s.DType)
 	dec(&s.Dimensions)
-	var numTuples int
-	dec(&numTuples)
-	if err != nil {
-		return
-	}
-	s.TupleShapes = make([]ArrayType, numTuples)
-	for ii := range s.TupleShapes {
-		s.TupleShapes[ii], err = GobDeserialize(decoder)
-		if err != nil {
-			return
-		}
-	}
 	return
 }
 
 // ConcatenateDimensions of two shapes. The resulting rank is the sum of both ranks. They must
 // have the same dtype. If any of them is a scalar, the resulting shape will be a copy of the other.
-// It doesn't work for Tuples.
 func ConcatenateDimensions(s1, s2 ArrayType) (shape ArrayType) {
-	if s1.IsTuple() || s2.IsTuple() {
-		return
-	}
 	if s1.DType == dtype.InvalidDType || s2.DType == dtype.InvalidDType {
 		return
 	}

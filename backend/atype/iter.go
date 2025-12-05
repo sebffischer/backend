@@ -53,7 +53,7 @@ func (s ArrayType) IterOn(indices []int) iter.Seq2[int, []int] {
 		panic(errors.Errorf("Shape.IterOn given len(indices) == %d, want it to be equal to the rank %d", len(indices), s.Rank()))
 	}
 	return func(yield func(int, []int) bool) {
-		if !s.Ok() || s.IsTuple() {
+		if !s.Ok() {
 			return // Iteration completed (vacuously true as no items were yielded)
 		}
 
@@ -209,7 +209,7 @@ func (s ArrayType) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[i
 	}
 
 	return func(yield func(int, []int) bool) {
-		if !s.Ok() || s.IsTuple() {
+		if !s.Ok() {
 			return // Iteration completed (vacuously true as no items were yielded)
 		}
 
