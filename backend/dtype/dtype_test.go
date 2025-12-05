@@ -49,9 +49,9 @@ func TestSize(t *testing.T) {
 }
 
 func TestSizeForDimensions(t *testing.T) {
-	require.Equal(t, 2*3*8, Int64.SizeForDimensions(2, 3))
-	require.Equal(t, 4, Float32.SizeForDimensions())
-	require.Equal(t, 2, BFloat16.SizeForDimensions(1, 1, 1))
+	require.Equal(t, 2*3*8, Int64.SizeForAxes(2, 3))
+	require.Equal(t, 4, Float32.SizeForAxes())
+	require.Equal(t, 2, BFloat16.SizeForAxes(1, 1, 1))
 }
 
 func TestIsPromotableTo(t *testing.T) {

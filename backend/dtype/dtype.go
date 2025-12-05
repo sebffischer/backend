@@ -166,17 +166,17 @@ func (dtype DType) Bits() int {
 	return dtype.Size() * 8
 }
 
-// SizeForDimensions returns the size in bytes used for the given dimensions.
+// SizeForAxes returns the size in bytes used for the given axes.
 // This is a safer method than Size in case the dtype uses an underlying size that is not multiple of 8 bits.
 //
-// It works also for scalar (one element) shapes where the list of dimensions is empty.
-func (dtype DType) SizeForDimensions(dimensions ...int) int {
+// It works also for scalar (one element) shapes where the list of axes is empty.
+func (dtype DType) SizeForAxes(axes ...int) int {
 	numElements := 1
-	for _, dim := range dimensions {
-		if dim < 0 {
-			panicf("dim cannot be neative for SizeForDimensions, got %v", dimensions)
+	for _, axis := range axes {
+		if axis < 0 {
+			panicf("axis cannot be neative for SizeForAxes, got %v", axes)
 		}
-		numElements *= dim
+		numElements *= axis
 	}
 
 	// Switch case for dtypes with size not multiple of 8 bits (1 byte).
