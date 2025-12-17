@@ -17,14 +17,14 @@ func (at ArrayType) Strides() (strides []int) {
 		return
 	}
 	strides = make([]int, numAxes)
-	if at.IsZeroSize() {
+	if at.IsEmpty() {
 		// Some axis has zero length.
 		return
 	}
 	currentStride := 1
 	for axis := numAxes - 1; axis >= 0; axis-- {
 		strides[axis] = currentStride
-		currentStride *= at.AxisLengths[axis]
+		currentStride *= at.Axes[axis].Length
 	}
 	return
 }
@@ -71,11 +71,11 @@ func (at ArrayType) IterOn(indices []int) iter.Seq2[int, []int] {
 		//
 		// Also count the number of "non-trivial" axes: axes whose lengths > 1.
 		numNonTrivialAxes := 0
-		for _, length := range at.AxisLengths {
-			if length <= 0 {
+		for _, axis := range at.Axes {
+			if axis.Length <= 0 {
 				return
 			}
-			if length > 1 {
+			if axis.Length > 1 {
 				numNonTrivialAxes++
 			}
 		}
@@ -104,12 +104,12 @@ func (at ArrayType) IterOn(indices []int) iter.Seq2[int, []int] {
 				// Increment indices to the next set of coordinates
 				// (row-major order: the last index changes fastest).
 				for axis := numAxes - 1; axis >= 0; axis-- {
-					if at.AxisLengths[axis] == 1 {
+					if at.Axes[axis].Length == 1 {
 						// Nothing to iterate at this axis.
 						continue
 					}
 					indices[axis]++
-					if indices[axis] < at.AxisLengths[axis] {
+					if indices[axis] < at.Axes[axis].Length {
 						// Successfully incremented this axis; no carry-over needed.
 						continue v2Yielder
 					}
@@ -129,8 +129,8 @@ func (at ArrayType) IterOn(indices []int) iter.Seq2[int, []int] {
 		// iterate over the non-trivial axes:
 		flatIdx := 0
 		spatialAxes := make([]int, 0, numNonTrivialAxes)
-		for axis, length := range at.AxisLengths {
-			if length > 1 {
+		for axis, axisVal := range at.Axes {
+			if axisVal.Length > 1 {
 				spatialAxes = append(spatialAxes, axis)
 			}
 		}
@@ -146,7 +146,7 @@ func (at ArrayType) IterOn(indices []int) iter.Seq2[int, []int] {
 			// (row-major order: the last index changes fastest).
 			for _, axis := range spatialAxes {
 				indices[axis]++
-				if indices[axis] < at.AxisLengths[axis] {
+				if indices[axis] < at.Axes[axis].Length {
 					// Successfully incremented this axis; no carry-over needed.
 					continue v3Yielder
 				}
@@ -226,7 +226,7 @@ func (at ArrayType) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[
 			if axis < 0 || axis >= numAxes {
 				panic(errors.Errorf("ArrayType.IterOnAxes: invalid axis %d, must be 0 <= axis < NumAxes (%d)", axis, numAxes))
 			}
-			if at.AxisLengths[axis] <= 0 {
+			if at.Axes[axis].Length <= 0 {
 				return
 			}
 			// Initialize indices for the axesToIterate to 0.
@@ -251,7 +251,7 @@ func (at ArrayType) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[
 				axis := axesToIterate[axisIdx]
 				indices[axis]++
 				flatIdx += strides[axis]
-				if indices[axis] < at.AxisLengths[axis] {
+				if indices[axis] < at.Axes[axis].Length {
 					// Successfully incremented this axis; no carry-over needed.
 					continue yielder
 				}

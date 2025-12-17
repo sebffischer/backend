@@ -28,7 +28,7 @@ func TestArrayType_Strides(t *testing.T) {
 func TestArrayType_Iter(t *testing.T) {
 	// Version 1: there is only one value to iterate:
 	arrayType := Make(dtype.Float32, 1, 1, 1, 1)
-	collect := make([][]int, 0, arrayType.Size())
+	collect := make([][]int, 0, arrayType.NumElements())
 	for flatIdx, indices := range arrayType.Iter() {
 		collect = append(collect, slices.Clone(indices))
 		require.Equal(t, 0, flatIdx) // There should only be one flatIdx, equal to 0.
@@ -37,7 +37,7 @@ func TestArrayType_Iter(t *testing.T) {
 
 	// Version 2: all axes are "spatial" (length > 1)
 	arrayType = Make(dtype.Float64, 3, 2)
-	collect = make([][]int, 0, arrayType.Size())
+	collect = make([][]int, 0, arrayType.NumElements())
 	var counter int
 	for flatIdx, indices := range arrayType.Iter() {
 		collect = append(collect, slices.Clone(indices))
@@ -56,7 +56,7 @@ func TestArrayType_Iter(t *testing.T) {
 
 	// Version 3: with only 2 spatial axes.
 	arrayType = Make(dtype.BFloat16, 3, 1, 2, 1)
-	collect = make([][]int, 0, arrayType.Size())
+	collect = make([][]int, 0, arrayType.NumElements())
 	counter = 0
 	for flatIdx, indices := range arrayType.Iter() {
 		collect = append(collect, slices.Clone(indices))
