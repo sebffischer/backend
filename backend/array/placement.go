@@ -23,11 +23,10 @@ type Placement struct {
 // SingletonPlacement returns a placement where the full array is placed on onDevice,
 // and every device in allDevices (except onDevice) gets an empty shard.
 //
-// If allDevices is nil/empty, the returned placement will only contain an entry for onDevice.
-func SingletonPlacement(axes Axes, onDevice Device, allDevices []Device) Placement {
-	// check that onDevice is in allDevices
+// Returns an error if onDevice is not in allDevices.
+func SingletonPlacement(axes Axes, onDevice Device, allDevices []Device) (Placement, error) {
 	if !slices.Contains(allDevices, onDevice) {
-		panic(errors.Errorf("SingletonPlacement: onDevice %d is not in allDevices", onDevice))
+		return Placement{}, errors.Errorf("SingletonPlacement: onDevice %d is not in allDevices", onDevice)
 	}
 	p := Placement{
 		Axes:   axes,
@@ -40,7 +39,7 @@ func SingletonPlacement(axes Axes, onDevice Device, allDevices []Device) Placeme
 		}
 		p.Shards[d] = EmptyShard(len(axes))
 	}
-	return p
+	return p, nil
 }
 
 // GlobalPlacement returns a placement where the full array is placed on each device.

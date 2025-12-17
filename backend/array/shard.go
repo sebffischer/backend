@@ -64,18 +64,15 @@ func (s Shard) Lengths() []int {
 //   - for each axis i: 0 <= Start <= End <= axes[i].Length
 func NewShard(axes Axes, axisShards []AxisShard) (Shard, error) {
 	if len(axisShards) != len(axes) {
-		return nil, errors.Errorf("New: axisShards has %d axes, want %d", len(axisShards), len(axes))
+		return nil, errors.Errorf("NewShard: axisShards has %d axes, want %d", len(axisShards), len(axes))
 	}
 	out := make(Shard, len(axisShards))
-	for i := range axisShards {
-		axisLen := axes[i].Length
-		if axisLen < 0 {
-			return nil, errors.Errorf("New: axes[%d].Length=%d must be >= 0", i, axisLen)
+	for i, as := range axisShards {
+		axisShard, err := NewAxisShard(as.Start, as.End, axes[i].Length)
+		if err != nil {
+			return nil, errors.Wrapf(err, "NewShard: invalid shard for axis %d", i)
 		}
-		if err := axisShards[i].Validate(axisLen); err != nil {
-			return nil, errors.Wrapf(err, "New: invalid shard for axis %d", i)
-		}
-		out[i] = axisShards[i]
+		out[i] = axisShard
 	}
 	return out, nil
 }
@@ -110,6 +107,7 @@ func FullShard(axes Axes) Shard {
 	shard := make(Shard, len(axes))
 	for i, axis := range axes {
 		if axis.Length < 0 {
+			// this should never happen
 			panic("FullShard: axis length must be >= 0")
 		}
 		shard[i] = AxisShard{Start: 0, End: axis.Length}
