@@ -686,8 +686,7 @@ type ConvolveAxesConfig struct {
 
 // Clone returns a deep copy of the structure.
 func (c ConvolveAxesConfig) Clone() ConvolveAxesConfig {
-	var c2 ConvolveAxesConfig
-	c2 = c
+	c2 := c
 	c2.InputSpatial = slices.Clone(c.InputSpatial)
 	c2.KernelSpatial = slices.Clone(c.KernelSpatial)
 	c2.OutputSpatial = slices.Clone(c.OutputSpatial)
