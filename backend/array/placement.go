@@ -42,8 +42,8 @@ func SingletonPlacement(axes Axes, onDevice Device, allDevices []Device) (Placem
 	return p, nil
 }
 
-// GlobalPlacement returns a placement where the full array is placed on each device.
-func GlobalPlacement(axes Axes, devices []Device) Placement {
+// FullyReplicated returns a placement where the full array is placed on each device.
+func FullyReplicated(axes Axes, devices []Device) Placement {
 	p := Placement{
 		Axes:   axes,
 		Shards: make(map[Device]Shard, len(devices)),
