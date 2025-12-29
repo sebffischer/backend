@@ -37,7 +37,7 @@
 //	func modelGraph(ctx *context.Context, spec any, inputs []*Node) ([]*Node) {
 //		_ = spec  // Not needed here, we know the dataset.
 //		atype.AssertNumAxes(inputs, 2)
-//		batchSize := inputs.ArrayType().AxisLengths[0]
+//		batchSize := inputs.ArrayType().Axes[0].Length
 //		logits := layers.Dense(ctx, inputs[0], /* useBias= */ true, /* outputDim= */ 1)
 //		atype.AssertAxisLengths(logits, batchSize, -1)
 //		return []*Node{logits}
@@ -59,6 +59,25 @@ import (
 	"github.com/sebffischer/backend/backend/dtype"
 )
 
+// Axis represents a single axis of an array, which has a length.
+type Axis struct {
+	Length int
+}
+
+// Axes is a vector containing zero or more Axis.
+// Each axis has a length, which is the number of elements along that axis.
+type Axes []Axis
+
+// Lengths returns a slice of the lengths of each axis.
+// This is a convenience method for when you need axis lengths as []int.
+func (axes Axes) Lengths() []int {
+	lengths := make([]int, len(axes))
+	for i, axis := range axes {
+		lengths[i] = axis.Length
+	}
+	return lengths
+}
+
 // ArrayType represents the array type (dtype and axes) of either an Array or from some computation node
 // that wraps an Array (e.g., when building a Graph).
 //
@@ -67,19 +86,20 @@ type ArrayType struct {
 	// DType is the data type of the unit element in a tensor.
 	DType dtype.DType
 
-	// AxisLengths is the length of each axis. Its length determines the number of axes.
-	AxisLengths []int
+	// Axes holds the axes of the array.
+	Axes Axes
 }
 
 // Make returns an ArrayType structure filled with the values given.
 func Make(dtype dtype.DType, axisLengths ...int) ArrayType {
-	at := ArrayType{AxisLengths: slices.Clone(axisLengths), DType: dtype}
-	for _, length := range axisLengths {
+	axes := make(Axes, len(axisLengths))
+	for i, length := range axisLengths {
 		if length < 0 {
-			panic(errors.Errorf("atype.Make(%s): cannot create an array type with an axis with length < 0", at))
+			panic(errors.Errorf("atype.Make: cannot create an array type with an axis with length < 0 (axis %d has length %d)", i, length))
 		}
+		axes[i] = Axis{Length: length}
 	}
-	return at
+	return ArrayType{Axes: axes, DType: dtype}
 }
 
 // Scalar returns a scalar ArrayType for the given type.
@@ -98,7 +118,7 @@ func Invalid() ArrayType {
 func (at ArrayType) Ok() bool { return at.DType != dtype.InvalidDType }
 
 // NumAxes returns the number of axes of the array.
-func (at ArrayType) NumAxes() int { return len(at.AxisLengths) }
+func (at ArrayType) NumAxes() int { return len(at.Axes) }
 
 // IsScalar returns whether the array type represents a scalar, that is there are no axes.
 func (at ArrayType) IsScalar() bool { return at.Ok() && at.NumAxes() == 0 }
@@ -114,7 +134,7 @@ func (at ArrayType) AxisLength(axis int) int {
 	if adjustedAxis < 0 || adjustedAxis >= at.NumAxes() {
 		panic(errors.Errorf("ArrayType.AxisLength(%d) out-of-bounds for NumAxes %d (arrayType=%s)", axis, at.NumAxes(), at))
 	}
-	return at.AxisLengths[adjustedAxis]
+	return at.Axes[adjustedAxis].Length
 }
 
 func (at ArrayType) ArrayType() ArrayType { return at }
@@ -124,29 +144,29 @@ func (at ArrayType) String() string {
 	if at.NumAxes() == 0 {
 		return fmt.Sprintf("(%s)", at.DType)
 	}
-	return fmt.Sprintf("(%s)%v", at.DType, at.AxisLengths)
+	return fmt.Sprintf("(%s)%v", at.DType, at.Axes.Lengths())
 }
 
-// Size returns the number of elements (not bytes) for this array type. It's the product of all axis lengths.
+// NumElements returns the number of elements (not bytes) for this array type. It's the product of all axis lengths.
 //
 // For the number of bytes used to store an array with this array type, see ArrayType.Memory.
 // TODO: Rename to numElemenets
-func (at ArrayType) Size() (size int) {
-	size = 1
-	for _, length := range at.AxisLengths {
-		size *= length
+func (at ArrayType) NumElements() (numElements int) {
+	numElements = 1
+	for _, axis := range at.Axes {
+		numElements *= axis.Length
 	}
 	return
 }
 
-// IsZeroSize returns whether any of the axis lengths is zero, in which case
+// IsEmpty returns whether any of the axis lengths is zero, in which case
 // it's an empty array type, with no data attached to it.
 //
 // Notice scalars are not zero in size -- they have size one, but zero axes.
 // TODO: Rename to HasZeroElements()
-func (at ArrayType) IsZeroSize() bool {
-	for _, length := range at.AxisLengths {
-		if length == 0 {
+func (at ArrayType) IsEmpty() bool {
+	for _, axis := range at.Axes {
+		if axis.Length == 0 {
 			return true
 		}
 	}
@@ -158,7 +178,7 @@ func (at ArrayType) IsZeroSize() bool {
 // Careful, so far all types in Go and on device seem to use the same sizes, but future type this is not guaranteed.
 func (at ArrayType) Memory() uintptr {
 	// FIXME: How to handle sub-byte types (like S2 etc.)
-	return at.DType.Memory() * uintptr(at.Size())
+	return at.DType.Memory() * uintptr(at.NumElements())
 }
 
 // Equal compares two array types for equality: dtype and axis lengths are compared.
@@ -166,17 +186,10 @@ func (at ArrayType) Equal(other ArrayType) bool {
 	if at.DType != other.DType {
 		return false
 	}
-	if at.NumAxes() != other.NumAxes() {
-		return false
-	}
-	if at.IsScalar() {
-		return true
-	}
-	// For normal array types just compare axis lengths.
-	return slices.Equal(at.AxisLengths, other.AxisLengths)
+	return at.EqualAxes(other)
 }
 
-// EqualAxes compares two array types for equality of axis lengths. Dtypes can be different.
+// EqualAxes compares two array types for equality of axes. Dtypes can be different.
 func (at ArrayType) EqualAxes(other ArrayType) bool {
 	if at.NumAxes() != other.NumAxes() {
 		return false
@@ -184,14 +197,16 @@ func (at ArrayType) EqualAxes(other ArrayType) bool {
 	if at.IsScalar() {
 		return true
 	}
-	// For normal array types just compare axis lengths.
-	return slices.Equal(at.AxisLengths, other.AxisLengths)
+	// For normal array types just compare axes.
+	return slices.EqualFunc(at.Axes, other.Axes, func(a, b Axis) bool {
+		return a.Length == b.Length
+	})
 }
 
 // Clone returns a new deep copy of the array type.
 func (at ArrayType) Clone() (cloned ArrayType) {
 	cloned.DType = at.DType
-	cloned.AxisLengths = slices.Clone(at.AxisLengths)
+	cloned.Axes = slices.Clone(at.Axes)
 	return
 }
 
@@ -207,7 +222,7 @@ func (at ArrayType) GobSerialize(encoder *gob.Encoder) (err error) {
 		}
 	}
 	enc(at.DType)
-	enc(at.AxisLengths)
+	enc(at.Axes)
 	return
 }
 
@@ -223,7 +238,7 @@ func GobDeserialize(decoder *gob.Decoder) (at ArrayType, err error) {
 		}
 	}
 	dec(&at.DType)
-	dec(&at.AxisLengths)
+	dec(&at.Axes)
 	return
 }
 
@@ -243,9 +258,9 @@ func ConcatenateAxes(at1, at2 ArrayType) (result ArrayType) {
 		return at1.Clone()
 	}
 	result.DType = at1.DType
-	result.AxisLengths = make([]int, at1.NumAxes()+at2.NumAxes())
-	copy(result.AxisLengths, at1.AxisLengths)
-	copy(result.AxisLengths[at1.NumAxes():], at2.AxisLengths)
+	result.Axes = make(Axes, at1.NumAxes()+at2.NumAxes())
+	copy(result.Axes, at1.Axes)
+	copy(result.Axes[at1.NumAxes():], at2.Axes)
 	return
 }
 
@@ -274,7 +289,7 @@ func arrayTypeForAnyValueRecursive(arrayType *ArrayType, v reflect.Value, t refl
 
 	// Slice: recurse into its element type (again slices or a supported POD).
 	t = t.Elem()
-	arrayType.AxisLengths = append(arrayType.AxisLengths, v.Len())
+	arrayType.Axes = append(arrayType.Axes, Axis{Length: v.Len()})
 	arrayTypePrefix := arrayType.Clone()
 
 	// The first element is the reference

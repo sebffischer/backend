@@ -27,8 +27,8 @@ func (at ArrayType) CheckAxisLengths(axisLengths ...int) error {
 		return errors.Errorf("array type (%s) has incompatible number of axes %d (wanted %d)", at, at.NumAxes(), len(axisLengths))
 	}
 	for ii, wantLength := range axisLengths {
-		if wantLength != -1 && at.AxisLengths[ii] != wantLength {
-			return errors.Errorf("array type (%s) axis %d has length %d, wanted %d (wanted=%v)", at, ii, at.AxisLengths[ii], wantLength, axisLengths)
+		if wantLength != -1 && at.Axes[ii].Length != wantLength {
+			return errors.Errorf("array type (%s) axis %d has length %d, wanted %d (wanted=%v)", at, ii, at.Axes[ii].Length, wantLength, axisLengths)
 		}
 	}
 	return nil

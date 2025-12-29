@@ -45,16 +45,16 @@ func TestArrayType(t *testing.T) {
 	require.True(t, arrayType0.Ok())
 	require.True(t, arrayType0.IsScalar())
 	require.Equal(t, 0, arrayType0.NumAxes())
-	require.Len(t, arrayType0.AxisLengths, 0)
-	require.Equal(t, 1, arrayType0.Size())
+	require.Len(t, arrayType0.Axes, 0)
+	require.Equal(t, 1, arrayType0.NumElements())
 	require.Equal(t, 8, int(arrayType0.Memory()))
 
 	arrayType1 := Make(dtype.Float32, 4, 3, 2)
 	require.True(t, arrayType1.Ok())
 	require.False(t, arrayType1.IsScalar())
 	require.Equal(t, 3, arrayType1.NumAxes())
-	require.Len(t, arrayType1.AxisLengths, 3)
-	require.Equal(t, 4*3*2, arrayType1.Size())
+	require.Len(t, arrayType1.Axes, 3)
+	require.Equal(t, 4*3*2, arrayType1.NumElements())
 	require.Equal(t, 4*4*3*2, int(arrayType1.Memory()))
 }
 
